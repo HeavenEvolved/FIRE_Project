@@ -10,7 +10,7 @@ st.title("🔬 High-Precision Daily Performance Ledger")
 st.write("Fixed Shares Bought: **Jan 26, 2026** | Window Ends: **Apr 10, 2026**")
 
 # Constants
-tickers = ['SPY', 'VUG', 'QQQ', 'TSM', 'SMH']
+tickers = ['SPY', 'SCHX', 'XLF', 'VUG', 'QQQ']
 budget_per_ticker = 100000.0
 total_budget = 500000.0
 start_date = "2026-01-26"
