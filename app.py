@@ -19,7 +19,7 @@ st.write("Fixed Allocation: **Jan 26, 2026** | Window Ends: **Apr 10, 2026**")
 tickers = ['SCHX', 'XLRE', 'XLF', 'QQQ', 'MSFT']
 budget_per_ticker = 100000.0
 total_budget = 500000.0
-start_date = "2026-01-12"
+start_date = "2026-01-26"
 end_date = "2026-04-10"
 precision = 2
 
@@ -33,23 +33,57 @@ options_symbols = {
 
 # Kill-switch logic
 today = str(date.today())
-fetch_end = min(today, end_date)
+fetch_end = (pd.to_datetime(min(today, end_date)) + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
 
 @st.cache_data(ttl=86400)
-def get_data(ticker_list, option_dict, start, end):
-    stock_data = yf.download(ticker_list, start=start, end=end, auto_adjust=True)['Close'] # type: ignore
+def get_data(ticker_list, option_dict, start, end, opt_lookback_days=90):
+    start_dt = pd.to_datetime(start)
+    end_dt = pd.to_datetime(end)
+
+    # Stocks: only need your analysis window
+    stock_data = yf.download( # type: ignore
+        ticker_list,
+        start=start_dt.strftime("%Y-%m-%d"),
+        end=end_dt.strftime("%Y-%m-%d"),
+        auto_adjust=True
+    )["Close"]
+
+    # Options: pull a longer window so we can find last traded close before start
     opt_list = list(option_dict.values())
-    opt_data = yf.download(opt_list, start=start, end=end, auto_adjust=True)['Close'] # type: ignore
-    
-    # --- DATA CLEANING PIPELINE ---
-    # ffill for gaps after start, bfill for gaps on/before start
-    stock_data = stock_data.ffill().bfill()
-    opt_data = opt_data.ffill().bfill()
-    
+    opt_start_dt = start_dt - pd.Timedelta(days=opt_lookback_days)
+
+    opt_data = yf.download( # type: ignore
+        opt_list,
+        start=opt_start_dt.strftime("%Y-%m-%d"),
+        end=end_dt.strftime("%Y-%m-%d"),
+        auto_adjust=True
+    )["Close"]
+
+    # Normalize to DataFrame even if one column comes back as Series
+    if isinstance(stock_data, pd.Series):
+        stock_data = stock_data.to_frame()
+    if isinstance(opt_data, pd.Series):
+        opt_data = opt_data.to_frame()
+
+    # ---- Cleaning ----
+
+    # Options: IMPORTANT — use forward-fill only (stale last trade)
+    # This will carry the last traded close forward in time.
+    opt_data = opt_data.ffill()
+
+    # Detect options that never traded in the entire pulled window
+    never_traded = opt_data.columns[opt_data.isna().all()]
+    if len(never_traded) > 0:
+        # Choose what you want here: 0.0 is a practical fallback
+        opt_data[never_traded] = 0.0
+
+    # Trim options back to your analysis window after we’ve established last trade prices
+    opt_data = opt_data.loc[start_dt.strftime("%Y-%m-%d"):]
+
     return stock_data, opt_data
 
 try:
-    df, df_opt = get_data(tickers, options_symbols, start_date, fetch_end)
+    df, df_opt = get_data(tickers, options_symbols, start_date, fetch_end, opt_lookback_days=90)
 
     if not df.empty and not df_opt.empty:
         # --- 1. STOCK PORTFOLIO CALCULATIONS ---
