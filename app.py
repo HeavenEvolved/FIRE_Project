@@ -13,7 +13,7 @@ st.write("Fixed Allocation: **Jan 26, 2026** | Window Ends: **Apr 10, 2026**")
 tickers = ['SCHX', 'XLRE', 'XLF', 'QQQ', 'MSFT']
 budget_per_ticker = 100000.0
 total_budget = 500000.0
-start_date = "2026-01-12"
+start_date = "2026-01-26"
 end_date = "2026-04-10"
 precision = 2
 
