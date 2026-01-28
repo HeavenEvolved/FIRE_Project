@@ -1,11 +1,17 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-from datetime import date
+from datetime import datetime, date, time, timedelta, timezone
+import datetime as dt
 import io
+import os
+import json
+import requests
+from zoneinfo import ZoneInfo
 
 # 1. Page Config
 st.set_page_config(page_title="Dual Portfolio Ledger", layout="wide")
+
 st.title("🔬 High-Precision Dual Portfolio Ledger")
 st.write("Fixed Allocation: **Jan 26, 2026** | Window Ends: **Apr 10, 2026**")
 
@@ -13,7 +19,7 @@ st.write("Fixed Allocation: **Jan 26, 2026** | Window Ends: **Apr 10, 2026**")
 tickers = ['SCHX', 'XLRE', 'XLF', 'QQQ', 'MSFT']
 budget_per_ticker = 100000.0
 total_budget = 500000.0
-start_date = "2026-01-26"
+start_date = "2026-01-12"
 end_date = "2026-04-10"
 precision = 2
 
@@ -91,7 +97,7 @@ try:
         s_curr = multi_df_stock['Portfolio Metrics'].iloc[-1]
         s_total_gl_val = s_curr['Total Value ($)'] - total_budget
         s_total_gl_pct = (s_total_gl_val / total_budget) * 100
-
+        
         sc1, sc2, sc3, sc4 = st.columns(4)
         sc1.metric("Stock Value", f"${s_curr['Total Value ($)']:,.{precision}f}", f"${s_curr['Daily G/L ($)']:,.{precision}f}")
         sc2.metric("Total P/L ($)", f"${s_total_gl_val:,.{precision}f}")
@@ -131,6 +137,23 @@ try:
             o_csv_df.columns = ['_'.join(col).strip() for col in o_csv_df.columns.values]
             o_csv = o_csv_df.to_csv().encode('utf-8')
             st.download_button(label="📩 Download Options CSV", data=o_csv, file_name=f"options_ledger_{today}.csv", mime="text/csv")
+        
+        with st.expander("Deep Dive Analysis", expanded=False):
+            if 'multi_df_stock' in locals() and 'multi_df_opt' in locals():
+                st.header("🔎 Deep Dive Analysis")
 
+                st.subheader("Equity Curves (Stock vs Options)")
+                stock_equity_curve = multi_df_stock["Portfolio Metrics"]["Total Value ($)"].rename("Stock Portfolio ($)")
+                opt_equity_curve = multi_df_opt["Portfolio Metrics"]["Total Value ($)"].rename("Options Portfolio ($)")
+                equity_curves = pd.concat([stock_equity_curve, opt_equity_curve], axis=1).dropna(how="all")
+                st.line_chart(equity_curves)
+
+                st.subheader("Daily Returns (Stock vs Options)")
+                stock_returns_curve = multi_df_stock["Portfolio Metrics"]["Daily G/L ($)"].rename("Stock Portfolio ($)")
+                opt_returns_curve = multi_df_opt["Portfolio Metrics"]["Daily G/L ($)"].rename("Options Portfolio ($)")
+                returns_curves = pd.concat([stock_returns_curve, opt_returns_curve], axis=1).dropna(how="all")
+                st.line_chart(returns_curves)
+            else:
+                st.warning("Data not available for deep dive analysis.")
 except Exception as e:
     st.error(f"Error: {e}")

@@ -1,2 +1,4 @@
-Data/*
+Data/
 *.ipynb
+.streamlit/
+cache_news/
