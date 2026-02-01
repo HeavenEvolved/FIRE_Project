@@ -133,7 +133,7 @@ try:
         s_total_gl_pct = (s_total_gl_val / total_budget) * 100
         
         sc1, sc2, sc3, sc4 = st.columns(4)
-        sc1.metric("Stock Value", f"${s_curr['Total Value ($)']:,.{precision}f}", f"${s_curr['Daily G/L ($)']:,.{precision}f}")
+        sc1.metric("Stock Value", f"${s_curr['Total Value ($)']:,.{precision}f}", f"{s_curr['Daily G/L ($)']:,.{precision}f}")
         sc2.metric("Total P/L ($)", f"${s_total_gl_val:,.{precision}f}")
         sc3.metric("Total G/L (%)", f"{s_total_gl_pct:.{precision}f}%")
         sc4.metric("Daily Change (%)", f"{s_curr['Daily G/L (%)']:.{precision}f}%")
@@ -146,7 +146,7 @@ try:
         o_total_gl_pct = (o_total_gl_val / total_budget) * 100
 
         oc1, oc2, oc3, oc4 = st.columns(4)
-        oc1.metric("Options Value", f"${o_curr['Total Value ($)']:,.{precision}f}", f"${o_curr['Daily G/L ($)']:,.{precision}f}")
+        oc1.metric("Options Value", f"${o_curr['Total Value ($)']:,.{precision}f}", f"{o_curr['Daily G/L ($)']:,.{precision}f}")
         oc2.metric("Total P/L ($)", f"${o_total_gl_val:,.{precision}f}")
         oc3.metric("Total G/L (%)", f"{o_total_gl_pct:.{precision}f}%")
         oc4.metric("Daily Change (%)", f"{o_curr['Daily G/L (%)']:.{precision}f}%")
