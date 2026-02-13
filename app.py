@@ -8,6 +8,8 @@ import os
 import json
 import requests
 from zoneinfo import ZoneInfo
+import matplotlib.pyplot as plt
+import numpy as np
 
 # 1. Page Config
 st.set_page_config(page_title="Dual Portfolio Ledger", layout="wide")
@@ -34,6 +36,14 @@ options_symbols = {
 # Kill-switch logic
 today = str(date.today())
 fetch_end = (pd.to_datetime(min(today, end_date)) + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+
+def get_color_for_change(change_pct, cmap_name='RdGy_r', vmin=-5, vmax=5):
+    """Get RGB color string for a given percentage change."""
+    cmap = plt.get_cmap(cmap_name)
+    # Normalize the change percentage to [0, 1]
+    normalized = np.clip((change_pct - vmin) / (vmax - vmin), 0, 1)
+    rgba = cmap(normalized)
+    return f'rgba({int(rgba[0]*255)}, {int(rgba[1]*255)}, {int(rgba[2]*255)}, {rgba[3]})'
 
 @st.cache_data(ttl=86400)
 def get_data(ticker_list, option_dict, start, end, opt_lookback_days=90):
@@ -97,14 +107,27 @@ try:
         
         # Stock Multi-Index Frame
         s_frames = {}
+        # Calculate daily change for each stock position
+        s_daily_change_pct_by_stock = {}
+        s_total_change_pct_by_stock = {}
         for t in tickers:
-            s_frames[(t, 'Price')] = df[t].round(precision)
-            s_frames[(t, 'Shares')] = shares_owned[t]
+            stock_position_val = (df[t] * shares_owned[t]).round(precision)
+            s_daily_change_pct_by_stock[t] = (stock_position_val.pct_change().fillna(0.0) * 100).round(precision)
+            # Calculate total change % from start to end
+            total_change_pct = ((stock_position_val.iloc[-1] - budget_per_ticker) / budget_per_ticker * 100)
+            s_total_change_pct_by_stock[t] = total_change_pct
+        
+        for t in tickers:
+            ticker_label = f"{t} ({s_total_change_pct_by_stock[t]:+.{precision}f}%)"
+            s_frames[(ticker_label, 'Price')] = df[t].round(precision)
+            s_frames[(ticker_label, 'Shares')] = shares_owned[t]
+            s_frames[(ticker_label, 'Chg %')] = s_daily_change_pct_by_stock[t]
         s_frames[('Portfolio Metrics', 'Total Value ($)')] = s_total_val
         s_frames[('Portfolio Metrics', 'Daily G/L ($)')] = s_daily_gl_dollars
         s_frames[('Portfolio Metrics', 'Daily G/L (%)')] = s_daily_gl_pct
         multi_df_stock = pd.DataFrame(s_frames)
         multi_df_stock.columns = pd.MultiIndex.from_tuples(multi_df_stock.columns) # type: ignore
+        multi_df_stock.index = multi_df_stock.index.strftime('%Y-%m-%d') # type: ignore
 
         # --- 2. OPTIONS PORTFOLIO CALCULATIONS ---
         initial_opt_prices = df_opt.loc[start_date].replace(0, 0.01)
@@ -117,14 +140,27 @@ try:
 
         # Options Multi-Index Frame
         o_frames = {}
+        # Calculate daily change for each options position
+        o_daily_change_pct_by_stock = {}
+        o_total_change_pct_by_stock = {}
         for stock, symbol in options_symbols.items():
-            o_frames[(stock, 'Price')] = df_opt[symbol].round(precision)
-            o_frames[(stock, 'Contracts')] = contracts_owned[symbol]
+            option_position_val = (df_opt[symbol] * contracts_owned[symbol] * 100).round(precision)
+            o_daily_change_pct_by_stock[stock] = (option_position_val.pct_change().fillna(0.0) * 100).round(precision)
+            # Calculate total change % from start to end
+            total_change_pct = ((option_position_val.iloc[-1] - budget_per_ticker) / budget_per_ticker * 100)
+            o_total_change_pct_by_stock[stock] = total_change_pct
+        
+        for stock, symbol in options_symbols.items():
+            stock_label = f"{stock} ({o_total_change_pct_by_stock[stock]:+.{precision}f}%)"
+            o_frames[(stock_label, 'Price')] = df_opt[symbol].round(precision)
+            o_frames[(stock_label, 'Contracts')] = contracts_owned[symbol]
+            o_frames[(stock_label, 'Chg %')] = o_daily_change_pct_by_stock[stock]
         o_frames[('Portfolio Metrics', 'Total Value ($)')] = o_total_val
         o_frames[('Portfolio Metrics', 'Daily G/L ($)')] = o_daily_gl_dollars
         o_frames[('Portfolio Metrics', 'Daily G/L (%)')] = o_daily_gl_pct
         multi_df_opt = pd.DataFrame(o_frames)
         multi_df_opt.columns = pd.MultiIndex.from_tuples(multi_df_opt.columns) # type: ignore
+        multi_df_opt.index = multi_df_opt.index.strftime('%Y-%m-%d') # type: ignore
 
         # --- 3. UPDATED METRIC CARDS ---
         st.subheader(f"🏛️ Stock Portfolio Summary (${total_budget/1000:,.0f}k Basis)")
@@ -157,7 +193,18 @@ try:
         tab1, tab2 = st.tabs(["Stock Ledger", "Options Ledger"])
         
         with tab1:
-            st.dataframe(multi_df_stock.style.format(f"{{:.{precision}f}}"), width='stretch')
+            # Style: format numbers and apply color gradient
+            styled_stock = multi_df_stock.style.format(f"{{:.{precision}f}}")
+            # Apply background color gradient specifically to Chg % columns
+            for stock in tickers:
+                stock_label = f"{stock} ({s_total_change_pct_by_stock[stock]:+.{precision}f}%)"
+                styled_stock = styled_stock.background_gradient(
+                    subset=pd.IndexSlice[:, (stock_label, 'Chg %')], # type: ignore
+                    cmap='RdGy_r',
+                    vmin=-5,
+                    vmax=5
+                )
+            st.dataframe(styled_stock, width='stretch')
             # Stock CSV Export
             s_csv_df = multi_df_stock.copy()
             s_csv_df.columns = ['_'.join(col).strip() for col in s_csv_df.columns.values]
@@ -165,7 +212,18 @@ try:
             st.download_button(label="📩 Download Stock CSV", data=s_csv, file_name=f"stock_ledger_{today}.csv", mime="text/csv")
             
         with tab2:
-            st.dataframe(multi_df_opt.style.format(f"{{:.{precision}f}}"), width='stretch')
+            # Style: format numbers and apply color gradient
+            styled_opt = multi_df_opt.style.format(f"{{:.{precision}f}}")
+            # Apply background color gradient specifically to Chg % columns
+            for stock in options_symbols.keys():
+                stock_label = f"{stock} ({o_total_change_pct_by_stock[stock]:+.{precision}f}%)"
+                styled_opt = styled_opt.background_gradient(
+                    subset=pd.IndexSlice[:, (stock_label, 'Chg %')], # type: ignore
+                    cmap='RdGy_r',
+                    vmin=-5,
+                    vmax=5
+                )
+            st.dataframe(styled_opt, width='stretch')
             # Options CSV Export
             o_csv_df = multi_df_opt.copy()
             o_csv_df.columns = ['_'.join(col).strip() for col in o_csv_df.columns.values]
